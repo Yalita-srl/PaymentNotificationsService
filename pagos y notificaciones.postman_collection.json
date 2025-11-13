@@ -1,0 +1,64 @@
+{
+	"info": {
+		"_postman_id": "3b3131c9-6cf1-4d69-8b6c-bbc37bf573d9",
+		"name": "pagos y notificaciones",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "39200431",
+		"_collection_link": "https://test88-3314.postman.co/workspace/final-microservicios~131817b9-2683-44cb-b52f-a838b140448a/collection/39200431-3b3131c9-6cf1-4d69-8b6c-bbc37bf573d9?action=share&source=collection_link&creator=39200431"
+	},
+	"item": [
+		{
+			"name": "test envio de correo",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:3004/health",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3004",
+					"path": [
+						"health"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "pagode una orden",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMiIsImVtYWlsIjoibW9uaWsyMDk0OTNAZ21haWwuY29tIiwicm9sZSI6InVzZXIiLCJleHAiOjE3NjMwNTUzMDQsIm9yaWdfaWF0IjoxNzYzMDUxNzA0fQ.80JshM7J5Pn_st_5R5Ksw_16y_FWI-ZKkNMYKgAJ9Ys",
+							"type": "string"
+						}
+					]
+				},
+				"method": "PUT",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:3000/api/v1/orders/2/state/paid",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3000",
+					"path": [
+						"api",
+						"v1",
+						"orders",
+						"2",
+						"state",
+						"paid"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
