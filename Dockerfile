@@ -1,31 +1,18 @@
-# ---------------------------
-# ETAPA 1: BUILD
-# ---------------------------
-FROM node:20-alpine AS builder
+FROM node:18-alpine
 
 WORKDIR /app
 
+# Copiar package.json y package-lock.json
 COPY package*.json ./
-COPY tsconfig*.json ./
-COPY nest-cli.json ./
 
+# Instalar dependencias
 RUN npm install
 
+# Copiar el código de la aplicación
 COPY . .
 
-RUN npm run build
+# Exponer el puerto
+EXPOSE 3004
 
-# ---------------------------
-# ETAPA 2: RUN
-# ---------------------------
-FROM node:20-alpine
-
-WORKDIR /app
-
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
-
-EXPOSE 3000
-
-CMD ["node", "dist/main.js"]
+# Comando para iniciar la aplicación
+CMD ["node", "app.js"]

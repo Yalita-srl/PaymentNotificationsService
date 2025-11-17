@@ -1,58 +1,57 @@
-version: "3.9"
-
 services:
-  orders-db:
-    image: postgres:16
-    container_name: orders-db
-    restart: always
-    environment:
-      POSTGRES_USER: serdev
-      POSTGRES_PASSWORD: nifer2030
-      POSTGRES_DB: orders_db
-    ports:
-      - "5432:5432"
-    volumes:
-      - orders_data:/var/lib/postgresql/data
-    networks:
-      - orders-network
-
-  orders-service:
+  notification-service:
     build: .
-    container_name: orders-service
-    restart: always
-    depends_on:
-      - orders-db
-    environment:
-      DB_HOST: orders-db
-      DB_PORT: 5432
-      DB_USERNAME: serdev
-      DB_PASSWORD: nifer2030
-      DB_DATABASE: orders_db
-      NODE_ENV: production
-      PORT: 3000
-      JWT_SECRET: grupo8
+    container_name: notification-service
     ports:
-      - "3000:3000"
+      - "3004:3004"
+    environment:
+      - PORT=3004
+      - NODE_ENV=development
+      - EMAIL_USER=${EMAIL_USER}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD}
+      - EMAIL_FROM=${EMAIL_FROM}
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      - ORDERS_SERVICE_URL=http://orders-service:3000
+      - JWT_TOKEN=${JWT_TOKEN}
+      - EMAILS_QUEUE=${EMAILS_QUEUE}
+      - PAYMENT_QUEUE=${PAYMENT_QUEUE}
+      - ORDER_QUEUE=${ORDER_QUEUE}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
     networks:
-      - orders-network
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-  pgadmin:
-    image: dpage/pgadmin4
-    container_name: pgadmin-orders
-    restart: always
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: admin123
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
     ports:
-      - "5050:80"
-    depends_on:
-      - orders-db
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    restart: unless-stopped
     networks:
-      - orders-network
+      - app-network
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 30s
 
 volumes:
-  orders_data:
+  rabbitmq_data:
 
 networks:
-  orders-network:
+  app-network:
     driver: bridge
