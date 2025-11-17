@@ -1,7 +1,6 @@
 const amqp = require('amqplib');
 const nodemailer = require('nodemailer');
 const express = require('express');
-const axios = require('axios');
 require('dotenv').config();
 
 const app = express();
@@ -10,10 +9,7 @@ app.use(express.json());
 // Configuración desde variables de entorno
 const QUEUE_NAME = process.env.EMAILS_QUEUE || 'emails_queue';
 const PAYMENT_QUEUE = process.env.PAYMENT_QUEUE || 'payment_events';
-const ORDER_QUEUE = process.env.ORDER_QUEUE || 'order_events';
 const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://guest:guest@127.0.0.1:5672';
-const ORDERS_SERVICE_URL = process.env.ORDERS_SERVICE_URL || 'http://localhost:3000';
-const JWT_TOKEN = process.env.JWT_TOKEN;
 const PORT = process.env.PORT || 3004;
 
 // Configuración del transporter de Nodemailer
@@ -36,55 +32,12 @@ transporter.verify(function (error, success) {
 
 // ==================== FUNCIONES DE EMAIL ====================
 
-async function sendOrderConfirmationEmail(emailData) {
-    const mailOptions = {
-        from: process.env.EMAIL_FROM || 'Notificaciones <noreply@example.com>',
-        to: emailData.to,
-        subject: emailData.subject,
-        html: emailData.body,
-        text: emailData.body.replace(/<[^>]*>/g, ''),
-        attachments: emailData.attachments || []
-    };
-
-    try {
-        const info = await transporter.sendMail(mailOptions);
-        console.log(`✅ Correo enviado a: ${emailData.to} - Message ID: ${info.messageId}`);
-        return { success: true, messageId: info.messageId };
-    } catch (error) {
-        console.error(`❌ Error enviando correo a ${emailData.to}:`, error);
-        return { success: false, error: error.message };
-    }
-}
-
-async function sendWelcomeEmail(emailData) {
-    const mailOptions = {
-        from: process.env.EMAIL_FROM || 'Bienvenida <noreply@example.com>',
-        to: emailData.to,
-        subject: emailData.subject,
-        html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <h1 style="color: #333;">¡Bienvenido/a!</h1>
-                <p>Gracias por registrarte en nuestro servicio.</p>
-                <p>${emailData.body}</p>
-                <div style="background-color: #f5f5f5; padding: 15px; margin: 20px 0;">
-                    <p style="margin: 0;">Estamos emocionados de tenerte con nosotros.</p>
-                </div>
-            </div>
-        `,
-        text: `¡Bienvenido/a! Gracias por registrarte. ${emailData.body}`
-    };
-
-    try {
-        const info = await transporter.sendMail(mailOptions);
-        console.log(`✅ Email de bienvenida enviado a: ${emailData.to}`);
-        return { success: true, messageId: info.messageId };
-    } catch (error) {
-        console.error(`❌ Error enviando email de bienvenida:`, error);
-        return { success: false, error: error.message };
-    }
-}
-
 async function sendPaymentConfirmationEmail(emailData) {
+    console.log('✉️ DEBUG - sendPaymentConfirmationEmail INICIADO:', {
+        to: emailData.to,
+        subject: emailData.subject
+    });
+
     const mailOptions = {
         from: process.env.EMAIL_FROM || 'Pagos <noreply@example.com>',
         to: emailData.to,
@@ -95,10 +48,34 @@ async function sendPaymentConfirmationEmail(emailData) {
 
     try {
         const info = await transporter.sendMail(mailOptions);
-        console.log(`✅ Email de pago enviado a: ${emailData.to}`);
+        console.log(`✅ Email de pago enviado a: ${emailData.to} - Message ID: ${info.messageId}`);
         return { success: true, messageId: info.messageId };
     } catch (error) {
-        console.error(`❌ Error enviando email de pago:`, error);
+        console.error(`❌ Error enviando email de pago a ${emailData.to}:`, error);
+        return { success: false, error: error.message };
+    }
+}
+
+async function sendTestEmail(emailData) {
+    console.log('✉️ DEBUG - sendTestEmail INICIADO:', {
+        to: emailData.to,
+        subject: emailData.subject
+    });
+
+    const mailOptions = {
+        from: process.env.EMAIL_FROM || 'Test <noreply@example.com>',
+        to: emailData.to,
+        subject: emailData.subject,
+        html: emailData.body,
+        text: emailData.body.replace(/<[^>]*>/g, '')
+    };
+
+    try {
+        const info = await transporter.sendMail(mailOptions);
+        console.log(`✅ Email de prueba enviado a: ${emailData.to}`);
+        return { success: true, messageId: info.messageId };
+    } catch (error) {
+        console.error(`❌ Error enviando email de prueba:`, error);
         return { success: false, error: error.message };
     }
 }
@@ -106,91 +83,33 @@ async function sendPaymentConfirmationEmail(emailData) {
 // ==================== PROCESAMIENTO DE EMAILS ====================
 
 async function processEmailFromQueue(emailData) {
+    console.log('📨 DEBUG - processEmailFromQueue INICIADO:', {
+        to: emailData.to,
+        type: emailData.type,
+        subject: emailData.subject
+    });
+
     console.log(`📧 Procesando email para: ${emailData.to}`);
     console.log(`📝 Tipo: ${emailData.type || 'General'}`);
 
     let result;
     
     switch (emailData.type) {
-        case 'ORDER_CONFIRMATION':
-            result = await sendOrderConfirmationEmail(emailData);
-            break;
-        case 'WELCOME_EMAIL':
-            result = await sendWelcomeEmail(emailData);
-            break;
         case 'PAYMENT_CONFIRMATION':
             result = await sendPaymentConfirmationEmail(emailData);
             break;
+        case 'TEST':
         default:
-            result = await sendOrderConfirmationEmail(emailData);
+            result = await sendTestEmail(emailData);
             break;
     }
 
     return result;
 }
 
-// ==================== INTEGRACIÓN CON ORDERS SERVICE ====================
-async function updateOrderStatus(orderId, newStatus) {
-  try {
-    const url = `${ORDERS_SERVICE_URL}/api/v1/orders/${orderId}/state/${newStatus}`;
-    
-    console.log(`🔄 Cambiando estado de orden ${orderId} a ${newStatus}`);
-    console.log(`🔑 Usando JWT Token: ${JWT_TOKEN.substring(0, 20)}...`);
-    
-    const response = await axios.put(url, {}, {
-      headers: {
-        'Authorization': `Bearer ${JWT_TOKEN}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    console.log(`✅ Estado de orden ${orderId} cambiado exitosamente a ${newStatus}`);
-    return { success: true, data: response.data };
-    
-  } catch (error) {
-    console.error(`❌ Error cambiando estado de orden ${orderId}:`, error.response?.data || error.message);
-    
-    // Debug adicional
-    if (error.response?.status === 401) {
-      console.log('🔐 Error 401 - Token inválido o expirado');
-      console.log('💡 Sugerencia: Genera un nuevo token desde el servicio de usuarios');
-    }
-    
-    return { 
-      success: false, 
-      error: error.response?.data || error.message 
-    };
-  }
-}
-
-function generatePaymentEmailBody(orderId, status, amount) {
-    const statusMessages = {
-        'paid': 'ha sido confirmado exitosamente',
-        'failed': 'ha fallado',
-        'refunded': 'ha sido reembolsado'
-    };
-
-    return `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h1 style="color: #333;">${status === 'paid' ? '¡Pago Confirmado!' : 'Problema con tu pago'}</h1>
-            <p>El pago para tu orden #${orderId} ${statusMessages[status] || 'ha cambiado de estado'}.</p>
-            
-            <div style="background-color: #f5f5f5; padding: 15px; margin: 20px 0;">
-                <h3 style="margin-top: 0;">Detalles del pago:</h3>
-                <p><strong>Número de orden:</strong> #${orderId}</p>
-                <p><strong>Estado:</strong> ${status}</p>
-                ${amount ? `<p><strong>Monto:</strong> $${amount}</p>` : ''}
-                <p><strong>Fecha:</strong> ${new Date().toLocaleDateString()}</p>
-            </div>
-            
-            <p>Si tienes alguna pregunta, no dudes en contactarnos.</p>
-        </div>
-    `;
-}
-
 // ==================== CONSUMERS RABBITMQ ====================
 
-// Consumer para emails
+// Consumer para emails generales
 async function consumeEmails() {
     let connection;
     let channel;
@@ -208,8 +127,11 @@ async function consumeEmails() {
         console.log(`🔄 Esperando mensajes en la cola: ${QUEUE_NAME}`);
 
         channel.consume(QUEUE_NAME, async (msg) => {
+            console.log('📥 DEBUG - Mensaje recibido en cola emails:', msg ? '✅' : '❌ NULL');
+            
             if (msg !== null) {
                 try {
+                    console.log('📄 DEBUG - Contenido del mensaje:', msg.content.toString());
                     const emailData = JSON.parse(msg.content.toString());
                     console.log(`📨 Email recibido: ${emailData.type || 'Sin tipo'} para ${emailData.to}`);
                     
@@ -230,15 +152,13 @@ async function consumeEmails() {
             }
         }, { noAck: false });
 
-        return { connection, channel };
-
     } catch (error) {
         console.error('💥 Error en el consumidor de emails:', error.message);
         setTimeout(consumeEmails, 5000);
     }
 }
 
-// Consumer para eventos de pago - USANDO EMAIL DEL TOKEN
+// Consumer para eventos de pago
 async function consumePaymentEvents() {
   let connection;
   let channel;
@@ -256,67 +176,16 @@ async function consumePaymentEvents() {
     console.log(`🔄 Esperando eventos de pago en: ${PAYMENT_QUEUE}`);
 
     channel.consume(PAYMENT_QUEUE, async (msg) => {
+      console.log('📥 DEBUG - Mensaje recibido en cola pagos:', msg ? '✅' : '❌ NULL');
+      
       if (msg !== null) {
         try {
-          const paymentEvent = JSON.parse(msg.content.toString());
-          console.log(`💰 Evento de pago recibido:`, paymentEvent);
+          console.log('📄 DEBUG - Contenido del mensaje pago:', msg.content.toString());
+          const paymentData = JSON.parse(msg.content.toString());
+          console.log('💰 Evento de pago recibido:', paymentData);
           
-          // PRIMERO: Actualizar estado en el servicio de órdenes
-          const updateResult = await updateOrderStatus(paymentEvent.orderId, 'paid');
-          
-          // SOLO SI se actualizó el estado, enviar email
-          if (updateResult.success) {
-            console.log(`✅ Estado actualizado, enviando email...`);
-            
-            // OBTENER EL EMAIL DEL TOKEN JWT
-            const userEmail = getEmailFromToken(JWT_TOKEN);
-            
-            if (!userEmail) {
-              console.error('❌ No se pudo obtener el email del token, no se enviará correo');
-              channel.ack(msg);
-              return;
-            }
-            
-            // Enviar email de confirmación
-            const emailData = {
-              type: 'PAYMENT_CONFIRMATION',
-              to: userEmail,
-              subject: `✅ Pago confirmado - Orden #${paymentEvent.orderId}`,
-              body: `
-                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                  <h1 style="color: #333;">¡Pago Confirmado Exitosamente!</h1>
-                  <p>Hola,</p>
-                  <p>Tu pago para la <strong>Orden #${paymentEvent.orderId}</strong> ha sido procesado correctamente.</p>
-                  
-                  <div style="background-color: #f5f5f5; padding: 15px; margin: 20px 0; border-radius: 5px;">
-                    <h3 style="margin-top: 0; color: #2c5aa0;">Resumen de tu compra:</h3>
-                    <p><strong>Número de orden:</strong> #${paymentEvent.orderId}</p>
-                    <p><strong>Estado:</strong> Pagado ✓</p>
-                    <p><strong>Monto:</strong> $${paymentEvent.amount || '0.00'}</p>
-                    <p><strong>Fecha:</strong> ${new Date().toLocaleDateString()}</p>
-                  </div>
-                  
-                  <p>Tu orden está siendo procesada y te notificaremos cuando esté en camino.</p>
-                  <p>¡Gracias por tu compra!</p>
-                  
-                  <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #666;">
-                    <p>Si tienes alguna pregunta, contáctanos en soporte@example.com</p>
-                  </div>
-                </div>
-              `,
-              orderId: paymentEvent.orderId
-            };
-            
-            const emailResult = await processEmailFromQueue(emailData);
-            if (emailResult.success) {
-              console.log(`📧 Email de confirmación enviado a: ${userEmail}`);
-            } else {
-              console.error(`❌ Error enviando email: ${emailResult.error}`);
-            }
-            
-          } else {
-            console.error(`❌ No se envió email porque falló la actualización del estado: ${updateResult.error}`);
-          }
+          // Procesar el pago y enviar email
+          await processPaymentEvent(paymentData);
           
           channel.ack(msg);
           
@@ -331,6 +200,58 @@ async function consumePaymentEvents() {
     console.error('💥 Error en consumidor de pagos:', error);
     setTimeout(consumePaymentEvents, 5000);
   }
+}
+
+// Procesar evento de pago y enviar email
+async function processPaymentEvent(paymentData) {
+    console.log('🔄 Procesando evento de pago para orden:', paymentData.orderId);
+    
+    const emailData = {
+        type: 'PAYMENT_CONFIRMATION',
+        to: paymentData.userEmail,
+        subject: `✅ Pago confirmado - Orden #${paymentData.orderId}`,
+        body: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h1 style="color: #333;">¡Pago Confirmado Exitosamente!</h1>
+                <p>Hola,</p>
+                <p>Tu pago para la <strong>Orden #${paymentData.orderId}</strong> ha sido procesado correctamente.</p>
+                
+                <div style="background-color: #f5f5f5; padding: 15px; margin: 20px 0; border-radius: 5px;">
+                    <h3 style="margin-top: 0; color: #2c5aa0;">Resumen de tu compra:</h3>
+                    <p><strong>Número de orden:</strong> #${paymentData.orderId}</p>
+                    <p><strong>Estado:</strong> Pagado ✓</p>
+                    <p><strong>Monto:</strong> $${paymentData.amount || '0.00'}</p>
+                    <p><strong>Fecha:</strong> ${new Date().toLocaleDateString()}</p>
+                </div>
+                
+                <p>Tu orden está siendo procesada y te notificaremos cuando esté en camino.</p>
+                <p>¡Gracias por tu compra!</p>
+                
+                <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #666;">
+                    <p>Si tienes alguna pregunta, contáctanos en soporte@example.com</p>
+                </div>
+            </div>
+        `,
+        orderId: paymentData.orderId
+    };
+
+    // Publicar el email a la cola de emails para procesamiento
+    try {
+        const connection = await amqp.connect(RABBITMQ_URL);
+        const emailChannel = await connection.createChannel();
+        
+        await emailChannel.assertQueue(QUEUE_NAME, { durable: true });
+        emailChannel.sendToQueue(QUEUE_NAME, Buffer.from(JSON.stringify(emailData)), {
+            persistent: true
+        });
+        
+        await emailChannel.close();
+        await connection.close();
+        
+        console.log(`📧 Email de pago encolado para: ${paymentData.userEmail}`);
+    } catch (error) {
+        console.error('❌ Error encolando email de pago:', error);
+    }
 }
 
 // ==================== ENDPOINTS HTTP ====================
@@ -383,40 +304,44 @@ app.get('/queue-status', async (req, res) => {
 // Endpoint para enviar email de prueba
 app.post('/test-email', async (req, res) => {
     try {
-        const { to, subject, body, type } = req.body;
+        const { to, subject, body } = req.body;
         
         const testEmail = {
             to: to || 'test@example.com',
             subject: subject || 'Email de prueba - Notification Service',
             body: body || 'Este es un email de prueba del servicio de notificaciones',
-            type: type || 'TEST'
+            type: 'TEST'
         };
 
-        const result = await processEmailFromQueue(testEmail);
+        // Publicar a la cola de emails
+        const connection = await amqp.connect(RABBITMQ_URL);
+        const channel = await connection.createChannel();
         
-        if (result.success) {
-            res.json({ 
-                message: 'Email de prueba enviado exitosamente',
-                messageId: result.messageId 
-            });
-        } else {
-            res.status(500).json({ 
-                error: 'Error enviando email de prueba',
-                details: result.error 
-            });
-        }
+        await channel.assertQueue(QUEUE_NAME, { durable: true });
+        channel.sendToQueue(QUEUE_NAME, Buffer.from(JSON.stringify(testEmail)), {
+            persistent: true
+        });
+
+        await channel.close();
+        await connection.close();
+
+        res.json({ 
+            message: 'Email de prueba encolado exitosamente',
+            email: testEmail
+        });
+        
     } catch (error) {
         res.status(500).json({ 
-            error: 'Error procesando solicitud de prueba',
+            error: 'Error encolando email de prueba',
             details: error.message 
         });
     }
 });
 
-// Endpoint para simular pago exitoso
+// Endpoint para simular pago exitoso (para testing)
 app.post('/simulate-payment', async (req, res) => {
     try {
-        const { orderId, userEmail, amount, status } = req.body;
+        const { orderId, userEmail, amount } = req.body;
         
         if (!orderId) {
             return res.status(400).json({ error: 'orderId es requerido' });
@@ -424,18 +349,18 @@ app.post('/simulate-payment', async (req, res) => {
 
         console.log(`💳 Simulando pago para orden: ${orderId}`);
         
-        // Publicar evento de pago a RabbitMQ
-        const connection = await amqp.connect(RABBITMQ_URL);
-        const channel = await connection.createChannel();
-        
         const paymentEvent = {
             orderId: orderId,
             userEmail: userEmail || `user${orderId}@example.com`,
             amount: amount || 50.00,
-            status: status || 'completed',
+            status: 'paid',
             timestamp: new Date().toISOString()
         };
 
+        // Publicar evento de pago a RabbitMQ
+        const connection = await amqp.connect(RABBITMQ_URL);
+        const channel = await connection.createChannel();
+        
         await channel.assertQueue(PAYMENT_QUEUE, { durable: true });
         channel.sendToQueue(PAYMENT_QUEUE, Buffer.from(JSON.stringify(paymentEvent)), {
             persistent: true
@@ -464,7 +389,6 @@ const server = app.listen(PORT, () => {
     console.log(`📧 Notification Service running on port ${PORT}`);
     console.log(`🔗 RabbitMQ: ${RABBITMQ_URL}`);
     console.log(`📬 Queues: ${QUEUE_NAME}, ${PAYMENT_QUEUE}`);
-    console.log(`🔗 Orders Service: ${ORDERS_SERVICE_URL}`);
     
     // Iniciar consumers
     consumeEmails();
@@ -488,67 +412,3 @@ process.on('uncaughtException', (error) => {
     console.error('💥 Uncaught Exception:', error);
     process.exit(1);
 });
-
-// Función para obtener el email del usuario desde el servicio de órdenes
-async function getUserEmail(orderId) {
-  try {
-    const url = `${ORDERS_SERVICE_URL}/api/v1/orders/${orderId}`;
-    
-    console.log(`📧 Obteniendo email para orden ${orderId}`);
-    
-    const response = await axios.get(url, {
-      headers: {
-        'Authorization': `Bearer ${JWT_TOKEN}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    const order = response.data;
-    
-    // Si la orden tiene userEmail, usarlo directamente
-    if (order.userEmail) {
-      console.log(`✅ Email obtenido de la orden: ${order.userEmail}`);
-      return order.userEmail;
-    }
-    
-    // Si no, intentar obtener del usuario (necesitarías un servicio de usuarios)
-    console.log('⚠️  No se encontró email en la orden, usando email por defecto');
-    return 'cliente@example.com';
-    
-  } catch (error) {
-    console.error(`❌ Error obteniendo email para orden ${orderId}:`, error.response?.data || error.message);
-    return 'cliente@example.com';
-  }
-}
-
-// Función para extraer email del token JWT
-function getEmailFromToken(token) {
-  try {
-    if (!token) {
-      console.log('❌ No hay token disponible');
-      return null;
-    }
-    
-    // Decodificar el payload del token JWT (sin verificar firma)
-    const payloadBase64 = token.split('.')[1];
-    const payloadJson = Buffer.from(payloadBase64, 'base64').toString();
-    const payload = JSON.parse(payloadJson);
-    
-    console.log('🔍 Payload del token:', payload);
-    
-    // Buscar el email en diferentes posibles campos
-    const email = payload.email || payload.userEmail || payload.sub || payload.username;
-    
-    if (email) {
-      console.log(`✅ Email obtenido del token: ${email}`);
-      return email;
-    } else {
-      console.log('❌ No se encontró email en el token');
-      return null;
-    }
-    
-  } catch (error) {
-    console.error('💥 Error decodificando token:', error.message);
-    return null;
-  }
-}
